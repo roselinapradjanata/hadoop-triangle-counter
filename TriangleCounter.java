@@ -74,9 +74,9 @@ public class TriangleCounter extends Configured implements Tool {
 		}
 	}
 
-	public static class TriadsReducer extends Reducer<LongWritable, LongWritable, Text, LongWritable> {
-		Text rKey = new Text();
+	public static class TriadsReducer extends Reducer<LongWritable, LongWritable, LongWritable, Text> {
 		LongWritable zero = new LongWritable(0);
+		Text rValue = new Text();
 		long[] arr = new long[4096];
 		int size = 0;
 
@@ -90,18 +90,75 @@ public class TriangleCounter extends Configured implements Tool {
 				long e = vs.next().get();
 				arr[size] = e;
 
-				rKey.set(key.get() + "," + e);
-				context.write(rKey, zero);
+				rValue.set(key.get() + "," + e);
+				context.write(zero, rValue);
 			}
 
 			Arrays.sort(arr, 0, size);
 
 			for (int i = 0; i < size; i++) {
 				for (int j = i + 1; j < size; j++) {
-					rKey.set(arr[i] + "," + arr[j]);
-					context.write(rKey, key);
+					rValue.set(arr[i] + "," + arr[j]);
+					context.write(key, rValue);
 				}
 			}
+		}
+	}
+
+	public static class TriadsMapper extends Mapper<LongWritable, Text, Text, LongWritable> {
+		Text mKey = new Text();
+		LongWritable mValue = new LongWritable();
+
+		public void map(LongWritable key, Text value, Context context) throws IOException, InterruptedException {
+			String line = value.toString();
+			StringTokenizer tokenizer = new StringTokenizer(line);
+
+			mValue.set(Long.parseLong(tokenizer.nextToken()));
+			mKey.set(tokenizer.nextToken());
+
+			context.write(mKey, mValue);
+		}
+	}
+
+	public static class CountTrianglesReducer extends Reducer<Text, LongWritable, LongWritable, LongWritable> {
+		LongWritable rKey = new LongWritable();
+		LongWritable one = new LongWritable(1);
+
+		public void reduce(Text key, Iterable<LongWritable> values, Context context) throws IOException, InterruptedException {
+			Iterator<LongWritable> vs = values.iterator();
+			ArrayList<Long> arr = new ArrayList<Long>();
+			
+			while (vs.hasNext()) {
+				arr.add(vs.next().get());
+			}
+
+			if (arr.contains(0)) {
+				for (long value : arr) {
+					if (value != 0) {
+						rKey.set(value);
+						context.write(rKey, one);
+					}
+				}
+			}
+		}
+	}
+
+	public static class AggregateCountReducer extends Reducer<LongWritable, LongWritable, LongWritable, LongWritable> {
+		LongWritable mKey = new LongWritable();
+		LongWritable mValue = new LongWritable();
+
+		public void reduce(LongWritable key, Iterable<LongWritable> values, Context context) throws IOException, InterruptedException {
+			Iterator<LongWritable> vs = values.iterator();
+
+			long count = 0;
+			while (vs.hasNext()) {
+				count += vs.next().get();
+			}
+
+			mKey.set(key.get());
+			mValue.set(count);
+
+			context.write(mKey, mValue);
 		}
 	}
 
@@ -122,7 +179,7 @@ public class TriangleCounter extends Configured implements Tool {
 		job1.setOutputFormatClass(TextOutputFormat.class);
 
 		FileInputFormat.addInputPath(job1, new Path(args[0]));
-		FileOutputFormat.setOutputPath(job1, new Path("/user/roselina/temp"));
+		FileOutputFormat.setOutputPath(job1, new Path("/user/roselina/temp1"));
 
 		Job job2 = Job.getInstance(getConf(), "triads");
 		job2.setJarByClass(TriangleCounter.class);
@@ -130,8 +187,8 @@ public class TriangleCounter extends Configured implements Tool {
 		job2.setMapOutputKeyClass(LongWritable.class);
 		job2.setMapOutputValueClass(LongWritable.class);
 
-		job2.setOutputKeyClass(Text.class);
-		job2.setOutputValueClass(LongWritable.class);
+		job2.setOutputKeyClass(LongWritable.class);
+		job2.setOutputValueClass(Text.class);
 
 		job2.setMapperClass(PairsMapper.class);
 		job2.setReducerClass(TriadsReducer.class);
@@ -139,11 +196,30 @@ public class TriangleCounter extends Configured implements Tool {
 		job2.setInputFormatClass(TextInputFormat.class);
 		job2.setOutputFormatClass(TextOutputFormat.class);
 
-		FileInputFormat.addInputPath(job2, new Path("/user/roselina/temp"));
+		FileInputFormat.addInputPath(job2, new Path("/user/roselina/temp1"));
+		FileOutputFormat.setOutputPath(job2, new Path("/user/roselina/temp2"));
+
+		Job job3 = Job.getInstance(getConf(), "triangles");
+		job3.setJarByClass(TriangleCounter.class);
+
+		job3.setMapOutputKeyClass(Text.class);
+		job3.setMapOutputValueClass(LongWritable.class);
+
+		job3.setOutputKeyClass(LongWritable.class);
+		job3.setOutputValueClass(LongWritable.class);
+
+		job3.setMapperClass(TriadsMapper.class);
+		job3.setReducerClass(CountTrianglesReducer.class);
+
+		job3.setInputFormatClass(TextInputFormat.class);
+		job3.setOutputFormatClass(TextOutputFormat.class);
+
+		FileInputFormat.addInputPath(job2, new Path("/user/roselina/temp2"));
 		FileOutputFormat.setOutputPath(job2, new Path(args[1]));
 
 		int ret = job1.waitForCompletion(true) ? 0 : 1;
 		if (ret == 0) ret = job2.waitForCompletion(true) ? 0 : 1;
+		if (ret == 0) ret = job3.waitForCompletion(true) ? 0 : 1;
 		return ret;
 	}
 
