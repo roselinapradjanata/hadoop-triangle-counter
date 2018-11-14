@@ -7,6 +7,7 @@ import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.LongWritable;
 import org.apache.hadoop.io.Text;
 import org.apache.hadoop.mapreduce.Job;
+import org.apache.hadoop.mapred.lib.IdentityMapper;
 import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
 import org.apache.hadoop.mapreduce.lib.input.TextInputFormat;
 import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
@@ -215,11 +216,26 @@ public class TriangleCounter extends Configured implements Tool {
 		job3.setOutputFormatClass(TextOutputFormat.class);
 
 		FileInputFormat.addInputPath(job2, new Path("/user/roselina/temp2"));
-		FileOutputFormat.setOutputPath(job2, new Path(args[1]));
+		FileOutputFormat.setOutputPath(job2, new Path("/user/roselina/temp3"));
+
+		Job job4 = Job.getInstance(getConf(), "count");
+		job4.setJarByClass(TriangleCounter.class);
+
+		job4.setOutputKeyClass(LongWritable.class);
+		job4.setOutputValueClass(LongWritable.class);
+
+		job4.setReducerClass(AggregateCountReducer.class);
+
+		job4.setInputFormatClass(TextInputFormat.class);
+		job4.setOutputFormatClass(TextOutputFormat.class);
+
+		FileInputFormat.addInputPath(job4, new Path("/user/roselina/temp3"));
+		FileOutputFormat.setOutputPath(job4, new Path(args[1]));
 
 		int ret = job1.waitForCompletion(true) ? 0 : 1;
 		if (ret == 0) ret = job2.waitForCompletion(true) ? 0 : 1;
 		if (ret == 0) ret = job3.waitForCompletion(true) ? 0 : 1;
+		if (ret == 0) ret = job4.waitForCompletion(true) ? 0 : 1;
 		return ret;
 	}
 
