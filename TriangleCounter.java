@@ -144,9 +144,9 @@ public class TriangleCounter extends Configured implements Tool {
 		}
 	}
 
-	public static class AggregateCountReducer extends Reducer<LongWritable, LongWritable, LongWritable, LongWritable> {
-		LongWritable mKey = new LongWritable();
-		LongWritable mValue = new LongWritable();
+	public static class AggregateCountReducer extends Reducer<LongWritable, LongWritable, Text, LongWritable> {
+		Text total = new Text("total");
+		LongWritable rValue = new LongWritable();
 
 		public void reduce(LongWritable key, Iterable<LongWritable> values, Context context) throws IOException, InterruptedException {
 			Iterator<LongWritable> vs = values.iterator();
@@ -156,10 +156,26 @@ public class TriangleCounter extends Configured implements Tool {
 				count += vs.next().get();
 			}
 
-			mKey.set(key.get());
-			mValue.set(count);
+			rValue.set(count);
 
-			context.write(mKey, mValue);
+			context.write(total, rValue);
+		}
+	}
+
+	public static class TotalSumReducer extends Reducer<Text, LongWritable, Text, LongWritable> {
+		LongWritable rValue = new LongWritable();
+
+		public void reduce(Text key, Iterable<LongWritable> values, Context context) throws IOException, InterruptedException {
+			Iterator<LongWritable> vs = values.iterator();
+
+			long count = 0;
+			while (vs.hasNext()) {
+				count += vs.next().get();
+			}
+
+			rValue.set(count);
+
+			context.write(key, rValue);
 		}
 	}
 
@@ -215,13 +231,13 @@ public class TriangleCounter extends Configured implements Tool {
 		job3.setInputFormatClass(TextInputFormat.class);
 		job3.setOutputFormatClass(TextOutputFormat.class);
 
-		FileInputFormat.addInputPath(job2, new Path("/user/roselina/temp2"));
-		FileOutputFormat.setOutputPath(job2, new Path("/user/roselina/temp3"));
+		FileInputFormat.addInputPath(job3, new Path("/user/roselina/temp2"));
+		FileOutputFormat.setOutputPath(job3, new Path("/user/roselina/temp3"));
 
 		Job job4 = Job.getInstance(getConf(), "count");
 		job4.setJarByClass(TriangleCounter.class);
 
-		job4.setOutputKeyClass(LongWritable.class);
+		job4.setOutputKeyClass(Text.class);
 		job4.setOutputValueClass(LongWritable.class);
 
 		job4.setReducerClass(AggregateCountReducer.class);
@@ -230,12 +246,27 @@ public class TriangleCounter extends Configured implements Tool {
 		job4.setOutputFormatClass(TextOutputFormat.class);
 
 		FileInputFormat.addInputPath(job4, new Path("/user/roselina/temp3"));
-		FileOutputFormat.setOutputPath(job4, new Path(args[1]));
+		FileOutputFormat.setOutputPath(job4, new Path("/user/roselina/temp4"));
+
+		Job job5 = Job.getInstance(getConf(), "count");
+		job5.setJarByClass(TriangleCounter.class);
+
+		job5.setOutputKeyClass(Text.class);
+		job5.setOutputValueClass(LongWritable.class);
+
+		job5.setReducerClass(TotalSumReducer.class);
+
+		job5.setInputFormatClass(TextInputFormat.class);
+		job5.setOutputFormatClass(TextOutputFormat.class);
+
+		FileInputFormat.addInputPath(job5, new Path("/user/roselina/temp4"));
+		FileOutputFormat.setOutputPath(job5, new Path(args[1]));
 
 		int ret = job1.waitForCompletion(true) ? 0 : 1;
 		if (ret == 0) ret = job2.waitForCompletion(true) ? 0 : 1;
 		if (ret == 0) ret = job3.waitForCompletion(true) ? 0 : 1;
 		if (ret == 0) ret = job4.waitForCompletion(true) ? 0 : 1;
+		if (ret == 0) ret = job5.waitForCompletion(true) ? 0 : 1;
 		return ret;
 	}
 
